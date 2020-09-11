@@ -74,6 +74,9 @@
 #define VOLTAGE_CONVERTER(value, min_value, step_size)\
 	((value - min_value)/step_size)
 
+#define BBOX_WCD_SPMI_PROBE_FAILED do {printk("BBox::UEC;2::1\n");} while(0);
+#define BBOX_WCD_REGISTER_ADSP_NOTIFIER_FAILED do {printk("BBox::UEC;2::2\n");} while(0);
+
 enum {
 	BOOST_SWITCH = 0,
 	BOOST_ALWAYS,
@@ -858,7 +861,7 @@ exit:
 	msm_anlg_cdc_compute_impedance(codec, impedance_l, impedance_r,
 				      zl, zr, high);
 
-	dev_dbg(codec->dev, "%s: RL %d ohm, RR %d ohm\n", __func__, *zl, *zr);
+	pr_info("%s: RL %d ohm, RR %d ohm\n", __func__, *zl, *zr);
 	dev_dbg(codec->dev, "%s: Impedance detection completed\n", __func__);
 }
 
@@ -1676,16 +1679,16 @@ static int msm_anlg_cdc_pa_gain_put(struct snd_kcontrol *kcontrol,
 	if (get_codec_version(sdm660_cdc) >= DIANGU) {
 		switch (ucontrol->value.integer.value[0]) {
 		case 0:
-			ear_pa_gain = 0x06;
+			ear_pa_gain = 0x00;
 			break;
 		case 1:
-			ear_pa_gain = 0x04;
-			break;
-		case 2:
 			ear_pa_gain = 0x02;
 			break;
+		case 2:
+			ear_pa_gain = 0x04;
+			break;
 		case 3:
-			ear_pa_gain = 0x00;
+			ear_pa_gain = 0x06;
 			break;
 		default:
 			return -EINVAL;
@@ -4093,6 +4096,8 @@ int msm_anlg_codec_info_create_codec_entry(struct snd_info_entry *codec_root,
 	if (ret < 0) {
 		pr_err("%s: Audio notifier register failed ret = %d\n",
 			__func__, ret);
+		printk("BBox;Failed to register adsp state notifier\n");
+		BBOX_WCD_REGISTER_ADSP_NOTIFIER_FAILED;
 		return ret;
 	}
 	return 0;
@@ -4641,6 +4646,8 @@ static int msm_anlg_cdc_probe(struct platform_device *pdev)
 		dev_err(&pdev->dev,
 			"%s:snd_soc_register_codec failed with error %d\n",
 			__func__, ret);
+		printk("BBox;snd_soc_register_codec failed\n");
+		BBOX_WCD_SPMI_PROBE_FAILED;
 		goto err_supplies;
 	}
 	BLOCKING_INIT_NOTIFIER_HEAD(&sdm660_cdc->notifier);

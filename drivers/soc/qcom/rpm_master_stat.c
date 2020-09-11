@@ -27,6 +27,9 @@
 
 #include "rpm_stats.h"
 
+#include <linux/timex.h>
+#include <linux/rtc.h>
+
 #define RPM_MASTERS_BUF_LEN 400
 
 #define SNPRINTF(buf, size, format, ...) \
@@ -76,6 +79,18 @@ struct msm_rpm_master_stats_private_data {
 	char buf[RPM_MASTERS_BUF_LEN];
 	struct msm_rpm_master_stats_platform_data *platform_data;
 };
+
+//CORE-PK-Show_rpm_master_stats-00+{
+#ifdef CONFIG_FIH_FEATURE_RPM_MASTER_STATS_LOG
+struct msm_rpm_master_stats_private_data *dbg_prvdata;
+
+struct dbg_msm_rpm_master_stats {
+	uint32_t active_cores;
+	uint64_t shutdown_req;
+	uint64_t bringup_ack;
+};
+#endif
+//CORE-PK-Show_rpm_master_stats-00+}
 
 int msm_rpm_master_stats_file_close(struct inode *inode,
 		struct file *file)
@@ -259,6 +274,150 @@ static int msm_rpm_master_copy_stats(
 	return RPM_MASTERS_BUF_LEN - count;
 }
 
+//CORE-PK-Show_rpm_master_stats-00+{
+#ifdef CONFIG_FIH_FEATURE_RPM_MASTER_STATS_LOG
+static void get_subsys_uptime(unsigned long data);
+static DEFINE_TIMER(get_subsys_uptime_timer, get_subsys_uptime, 0, 0);
+
+static void dbg_msm_rpm_master_copy_stats_v2(
+		struct msm_rpm_master_stats_private_data *prvdata, char *ehcs_buf)
+{
+	struct timex txc;
+	struct rtc_time tm;
+	struct dbg_msm_rpm_master_stats record;
+	struct msm_rpm_master_stats_platform_data *pdata;
+	unsigned long bringup_ack_rem, shutdown_req_rem;
+	unsigned long apss_bringup_ack, subsys_uptime;
+	int count = 0;
+	int master_cnt = 0;
+	char *buf;
+
+
+	pdata = prvdata->platform_data;
+	count = RPM_MASTERS_BUF_LEN;
+	buf = prvdata->buf;
+
+	while (master_cnt < prvdata->num_masters) {
+		record.shutdown_req = readq_relaxed(prvdata->reg_base +
+			(master_cnt * pdata->master_offset +
+			offsetof(struct msm_rpm_master_stats, shutdown_req)));
+
+		record.bringup_ack = readq_relaxed(prvdata->reg_base +
+			(master_cnt * pdata->master_offset +
+			offsetof(struct msm_rpm_master_stats, bringup_ack)));
+
+		record.active_cores = readl_relaxed(prvdata->reg_base +
+			(master_cnt * pdata->master_offset) +
+			offsetof(struct msm_rpm_master_stats, active_cores));
+
+		/* tick to ms */
+		(void)do_div(record.bringup_ack, 19200);
+		(void)do_div(record.shutdown_req, 19200);
+		/* ms to s, and remaining. */
+		bringup_ack_rem = do_div(record.bringup_ack, 1000);
+		shutdown_req_rem = do_div(record.shutdown_req, 1000);
+
+		SNPRINTF(buf, count, "[PM] sleep_info_m.%d - %7llu.%-3lu(0x%0x), %7llu.%-3lu s\n",
+			master_cnt,
+			record.bringup_ack,
+			bringup_ack_rem,
+			record.active_cores,
+			record.shutdown_req,
+			shutdown_req_rem );
+
+		if (ehcs_buf != NULL) {
+			if (master_cnt == 0x0) {
+				/* Record APSS bringup_ack time */
+				apss_bringup_ack = record.bringup_ack;
+
+				/* Get current local time of APSS on time */
+				do_gettimeofday(&(txc.time));
+				txc.time.tv_sec -= sys_tz.tz_minuteswest * 60;
+
+			} else if ((record.active_cores != 0x0) &&
+					 (apss_bringup_ack > record.bringup_ack)) {
+				/* Calculate time last in second */
+				subsys_uptime = apss_bringup_ack - record.bringup_ack;
+
+				/* Calculate sub-system brigup time in local time. */
+				rtc_time_to_tm((txc.time.tv_sec - subsys_uptime),&tm);
+
+				/* Check sub-system unsleep time and do actions. */
+				if (subsys_uptime >= 5400) { /* 90min(5400s) - do ramdump?? */
+					SNPRINTF(ehcs_buf, count, "BBox::EHCS;55601:i:unSleep over 90min(%s, %5lu, %02d-%02d %02d:%02d:%02d).\n",
+						GET_MASTER_NAME(master_cnt, prvdata), subsys_uptime,
+						tm.tm_mon + 1, tm.tm_mday, tm.tm_hour, tm.tm_min, tm.tm_sec);
+
+				} else if (subsys_uptime >= 900) { /* 15min(900s) ~ 90min - show msg or trigger msg dump. */
+					SNPRINTF(ehcs_buf, count, "BBox::EHCS;55601:i:unSleep over 15min(%s, %5lu, %02d-%02d %02d:%02d:%02d).\n",
+						GET_MASTER_NAME(master_cnt, prvdata), subsys_uptime,
+						tm.tm_mon + 1, tm.tm_mday, tm.tm_hour, tm.tm_min, tm.tm_sec);
+				}
+			}
+		} else if (master_cnt == 0x0) {
+				/* Trigger a timer to get sub-system uptime at 0.3 second later. */
+				mod_timer(&get_subsys_uptime_timer, jiffies + HZ/3);
+		}
+
+		master_cnt++;
+	}
+}
+
+void msm_show_rpm_master_stats(void)
+{
+	if (dbg_prvdata) {
+		dbg_msm_rpm_master_copy_stats_v2(dbg_prvdata, NULL);
+		pr_info("%s", dbg_prvdata->buf);
+
+	} else
+		pr_err("%s: rpm_master_stats info not ready.", __func__);
+
+}
+EXPORT_SYMBOL(msm_show_rpm_master_stats);
+
+static uint64_t dbg_msm_rpm_master_copy_APPS_stats(
+		struct msm_rpm_master_stats_private_data *prvdata)
+{
+	struct dbg_msm_rpm_master_stats record;
+
+		record.shutdown_req = readq_relaxed(prvdata->reg_base +
+			offsetof(struct msm_rpm_master_stats, shutdown_req));
+
+		record.bringup_ack = readq_relaxed(prvdata->reg_base +
+			offsetof(struct msm_rpm_master_stats, bringup_ack));
+
+		/* tick to ms */
+		(void)do_div(record.bringup_ack, 19200);
+		(void)do_div(record.shutdown_req, 19200);
+
+		return (record.bringup_ack - record.shutdown_req);
+}
+
+void get_apss_power_collapse_time(uint64_t *apps_pc_time)
+{
+	if (dbg_prvdata) {
+		*apps_pc_time = dbg_msm_rpm_master_copy_APPS_stats(dbg_prvdata);
+	} else
+		pr_err("%s: rpm_master_stats info not ready.", __func__);
+}
+EXPORT_SYMBOL(get_apss_power_collapse_time);
+
+static void get_subsys_uptime(unsigned long data)
+{
+	char ehcs_buf[RPM_MASTERS_BUF_LEN];
+
+	if (dbg_prvdata) {
+		dbg_msm_rpm_master_copy_stats_v2(dbg_prvdata, ehcs_buf);
+		//pr_info("%s", dbg_prvdata->buf);
+		pr_info("%s", ehcs_buf);
+
+	} else
+		pr_err("%s: rpm_master_stats info not ready.", __func__);
+}
+
+#endif /* CONFIG_FIH_FEATURE_RPM_MASTER_STATS_LOG */
+//CORE-PK-Show_rpm_master_stats-00+}
+
 static ssize_t msm_rpm_master_stats_file_read(struct file *file,
 				char __user *bufu, size_t count, loff_t *ppos)
 {
@@ -434,6 +593,33 @@ static  int msm_rpm_master_stats_probe(struct platform_device *pdev)
 
 	pdata->phys_addr_base = res->start;
 	pdata->phys_size = resource_size(res);
+
+//CORE-PK-Show_rpm_master_stats-00+{
+#ifdef CONFIG_FIH_FEATURE_RPM_MASTER_STATS_LOG
+	dbg_prvdata =
+		kzalloc(sizeof(struct msm_rpm_master_stats_private_data),
+			GFP_KERNEL);
+
+	if (!dbg_prvdata)
+		return -ENOMEM;
+
+	dbg_prvdata->reg_base = ioremap_nocache(pdata->phys_addr_base,
+						pdata->phys_size);
+	if (!dbg_prvdata->reg_base) {
+		kfree(dbg_prvdata);
+		dbg_prvdata = NULL;
+		pr_err("%s: ERROR could not ioremap start=%p, len=%u\n",
+			__func__, (void *)pdata->phys_addr_base,
+			pdata->phys_size);
+		return -EBUSY;
+	}
+
+	dbg_prvdata->len = 0;
+	dbg_prvdata->num_masters = pdata->num_masters;
+	dbg_prvdata->master_names = pdata->masters;
+	dbg_prvdata->platform_data = pdata;
+#endif
+//CORE-PK-Show_rpm_master_stats-00+}
 
 	dent = debugfs_create_file("rpm_master_stats", S_IRUGO, NULL,
 					pdata, &msm_rpm_master_stats_fops);

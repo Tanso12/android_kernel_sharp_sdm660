@@ -4169,6 +4169,10 @@ static int dwc3_msm_pm_prepare(struct device *dev)
 }
 
 #ifdef CONFIG_PM_SLEEP
+#ifdef CONFIG_FIH_MT_SLEEP
+extern int ftm_sleep_test;
+#endif
+
 static int dwc3_msm_pm_suspend(struct device *dev)
 {
 	int ret = 0;
@@ -4179,7 +4183,12 @@ static int dwc3_msm_pm_suspend(struct device *dev)
 	dbg_event(0xFF, "PM Sus", 0);
 
 	flush_workqueue(mdwc->dwc3_wq);
-	if (!atomic_read(&dwc->in_lpm) && !mdwc->no_wakeup_src_in_hostmode) {
+#ifdef CONFIG_FIH_MT_SLEEP
+	pr_info("%s atomic_read(&dwc->in_lpm)=%d, ftm_sleep_test=%d\n", __func__, atomic_read(&dwc->in_lpm), ftm_sleep_test);
+	if (!atomic_read(&dwc->in_lpm) && !ftm_sleep_test) {
+#else
+	if (!atomic_read(&dwc->in_lpm)) {
+#endif
 		dev_err(mdwc->dev, "Abort PM suspend!! (USB is outside LPM)\n");
 		return -EBUSY;
 	}

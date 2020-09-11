@@ -1,0 +1,42 @@
+1. Kernel configuration files
+   arch/arm64/configs: SAT-perf_defconfig
+
+2. How to build
+
+  Prerequisites:
+
+    * ramdisk.img - root fs
+
+    * mkbootimg - boot.img generator
+
+    * The ARM cross-compiler
+      We recommend getting the CodeSourcery Lite compiler.
+      Or, you can also use prebuild executable binary which is included in
+      standard Android tree.
+
+  Step 1: Build Kernel (zImage)
+    $ cd kernel
+
+    $ export ARCH=arm64
+
+    $ export CROSS_COMPILE=<cross compile path with prefix>
+      NOTE: Please set the location and the prefix of the ARM cross-compiler.
+	        Please use the absolute path for this.
+	  ex) <cross compiler path>/prebuilts/gcc/linux-x86/aarch64/aarch64-linux-android-4.9/bin/aarch64-linux-android-
+
+    $ make SAT-perf_defconfig O=<output path>
+      NOTE: Please set a configuration file you want to build.
+
+    $ make O=<output path>
+
+    You can see arch/arm64/boot/Image.gz-dtb if you succeed in building the kernel.
+
+  Step 2: Assembling the boot.img
+    (In the output directory)
+
+ $ mkbootimg --kernel <output path>/arch/arm64/boot/Image.gz-dtb --ramdisk ramdisk.img \
+   --cmdline "console=ttyMSM0,115200,n8 androidboot.console=ttyMSM0 earlycon=msm_serial_dm,0xc170000 androidboot.hardware=qcom \
+   user_debug=31 msm_rtb.filter=0x37 ehci-hcd.park=3 lpm_levels.sleep_disabled=1 sched_enable_hmp=1 sched_enable_power_aware=1 \
+   service_locator.enable=1 swiotlb=1 androidboot.configfs=true androidboot.usbcontroller=a800000.dwc3 buildvariant=user \
+   veritykeyid=id:7e4333f9bba00adfe0ede979e28ed1920492b40f" --base 0x00000000 --pagesize 4096 --os_version 8.0.0 --os_patch_level 2018-06-01 \
+   --output boot.img

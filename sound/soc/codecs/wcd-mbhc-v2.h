@@ -280,6 +280,8 @@ struct wcd_mbhc_config {
 	bool enable_anc_mic_detect;
 	u32 enable_usbc_analog;
 	struct usbc_ana_audio_config usbc_analog_cfg;
+	//add for new/old HW support FAO-4
+	bool fih_hs_support;
 };
 
 struct wcd_mbhc_intr {
@@ -463,6 +465,9 @@ struct wcd_mbhc {
 	struct mutex hphr_pa_lock;
 
 	unsigned long intr_status;
+  //Add prevent portable speaker detection abnormal -- st.
+	bool force_linein;
+	//Add prevent portable speaker detection abnormal -- ed.
 	bool is_hph_ocp_pending;
 
 	bool usbc_force_pr_mode;

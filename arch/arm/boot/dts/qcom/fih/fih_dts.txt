@@ -1,0 +1,15 @@
+sdm630-cdp-s2-evt.dts
+sdm630-cdp-s2-dvt.dts
+sdm660-cdp-s2p-evb.dts
+sdm660-cdp-s2p-evt1.dts
+sdm660-cdp-s2p-evt2.dts
+sdm660-cdp-s2p-dvt.dts
+sdm630-cdp-c1n-preEVT.dts
+sdm660-cdp-c1n-preEVT.dts
+sdm660-mtp-s2p-dvt.dts
+sdm630-mtp-s2-dvt.dts
+sdm660-mtp-sd1-preEVT.dts
+sdm660-mtp-sd1-EVT1.dts
+sdm660-mtp-sd1-EVT2.dts
+sdm660-mtp-sd1-EVT2-IDT.dts
+sdm660-mtp-hg1-EVT.dts

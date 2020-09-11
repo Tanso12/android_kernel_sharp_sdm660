@@ -1309,7 +1309,7 @@ static void *def_msm_int_wcd_mbhc_cal(void)
 		return NULL;
 
 #define S(X, Y) ((WCD_MBHC_CAL_PLUG_TYPE_PTR(msm_int_wcd_cal)->X) = (Y))
-	S(v_hs_max, 1500);
+	S(v_hs_max, 1600);
 #undef S
 #define S(X, Y) ((WCD_MBHC_CAL_BTN_DET_PTR(msm_int_wcd_cal)->X) = (Y))
 	S(num_btn, WCD_MBHC_DEF_BUTTONS);
@@ -1332,16 +1332,16 @@ static void *def_msm_int_wcd_mbhc_cal(void)
 	 * 210-290 == Button 2
 	 * 360-680 == Button 3
 	 */
-	btn_low[0] = 75;
-	btn_high[0] = 75;
-	btn_low[1] = 150;
-	btn_high[1] = 150;
-	btn_low[2] = 225;
-	btn_high[2] = 225;
-	btn_low[3] = 450;
-	btn_high[3] = 450;
-	btn_low[4] = 500;
-	btn_high[4] = 500;
+	btn_low[0] = 100;
+	btn_high[0] = 100;
+	btn_low[1] = 225;
+	btn_high[1] = 225;
+	btn_low[2] = 440;
+	btn_high[2] = 440;
+	btn_low[3] = 440;
+	btn_high[3] = 440;
+	btn_low[4] = 440;
+	btn_high[4] = 440;
 
 	return msm_int_wcd_cal;
 }
@@ -2728,6 +2728,80 @@ static struct snd_soc_dai_link msm_int_be_dai[] = {
 	},
 };
 
+/*Add for nxp tfa9891 or non nxp tfa9891*/
+static struct snd_soc_dai_link msm_mi2s_be_dai_links_nxp[] = {
+	{
+		.name = LPASS_BE_TERT_MI2S_RX,
+		.stream_name = "Tertiary MI2S Playback",
+		.cpu_dai_name = "msm-dai-q6-mi2s.2",
+		.platform_name = "msm-pcm-routing",
+		.codec_name = "tfa98xx.7-0034",
+		.codec_dai_name = "tfa98xx-aif-7-34",
+		.no_pcm = 1,
+		.dpcm_playback = 1,
+		.be_id = MSM_BACKEND_DAI_TERTIARY_MI2S_RX,
+		.be_hw_params_fixup = msm_common_be_hw_params_fixup,
+		.ops = &msm_mi2s_be_ops,
+		.ignore_suspend = 1,
+		.ignore_pmdown_time = 1,
+	},
+};
+
+/*Add for TI TAS2557 */
+static struct snd_soc_dai_link msm_mi2s_be_dai_links_ti[] = {
+	{
+		.name = LPASS_BE_TERT_MI2S_RX,
+		.stream_name = "Tertiary MI2S Playback",
+		.cpu_dai_name = "msm-dai-q6-mi2s.2",
+		.platform_name = "msm-pcm-routing",
+		.codec_name = "tas2557.7-004c",
+		.codec_dai_name = "tas2557 ASI1",
+		.no_pcm = 1,
+		.dpcm_playback = 1,
+		.be_id = MSM_BACKEND_DAI_TERTIARY_MI2S_RX,
+		.be_hw_params_fixup = msm_common_be_hw_params_fixup,
+		.ops = &msm_mi2s_be_ops,
+		.ignore_suspend = 1,
+		.ignore_pmdown_time = 1,
+	},
+};
+
+
+static struct snd_soc_dai_link msm_mi2s_be_dai_links_non_amp[] = {
+	{
+		.name = LPASS_BE_TERT_MI2S_RX,
+		.stream_name = "Tertiary MI2S Playback",
+		.cpu_dai_name = "msm-dai-q6-mi2s.2",
+		.platform_name = "msm-pcm-routing",
+		.codec_name = "msm-stub-codec.1",
+		.codec_dai_name = "msm-stub-rx",
+		.no_pcm = 1,
+		.dpcm_playback = 1,
+		.be_id = MSM_BACKEND_DAI_TERTIARY_MI2S_RX,
+		.be_hw_params_fixup = msm_common_be_hw_params_fixup,
+		.ops = &msm_mi2s_be_ops,
+		.ignore_suspend = 1,
+		.ignore_pmdown_time = 1,
+	},
+};
+static struct snd_soc_dai_link msm_usb_audio_dai_links[] = {
+	{ /* Hostless USB purpose */
+		.name = "USB Audio Hostless",
+		.stream_name = "USB Audio Hostless",
+		.cpu_dai_name = "USBAUDIO_HOSTLESS",
+		.platform_name = "msm-pcm-hostless",
+		.dynamic = 1,
+		.dpcm_playback = 1,
+		.dpcm_capture = 1,
+		.trigger = {SND_SOC_DPCM_TRIGGER_POST,
+			    SND_SOC_DPCM_TRIGGER_POST},
+		.no_host_mode = SND_SOC_DAI_LINK_NO_HOST,
+		.ignore_suspend = 1,
+		.ignore_pmdown_time = 1,
+		.codec_dai_name = "snd-soc-dummy-dai",
+		.codec_name = "snd-soc-dummy",
+	},
+};
 static struct snd_soc_dai_link msm_mi2s_be_dai_links[] = {
 	{
 		.name = LPASS_BE_PRI_MI2S_RX,
@@ -2786,21 +2860,6 @@ static struct snd_soc_dai_link msm_mi2s_be_dai_links[] = {
 		.be_hw_params_fixup = msm_common_be_hw_params_fixup,
 		.ops = &msm_mi2s_be_ops,
 		.ignore_suspend = 1,
-	},
-	{
-		.name = LPASS_BE_TERT_MI2S_RX,
-		.stream_name = "Tertiary MI2S Playback",
-		.cpu_dai_name = "msm-dai-q6-mi2s.2",
-		.platform_name = "msm-pcm-routing",
-		.codec_name = "msm-stub-codec.1",
-		.codec_dai_name = "msm-stub-rx",
-		.no_pcm = 1,
-		.dpcm_playback = 1,
-		.be_id = MSM_BACKEND_DAI_TERTIARY_MI2S_RX,
-		.be_hw_params_fixup = msm_common_be_hw_params_fixup,
-		.ops = &msm_mi2s_be_ops,
-		.ignore_suspend = 1,
-		.ignore_pmdown_time = 1,
 	},
 	{
 		.name = LPASS_BE_TERT_MI2S_TX,
@@ -3068,6 +3127,8 @@ ARRAY_SIZE(msm_int_dai) +
 ARRAY_SIZE(msm_int_wsa_dai) +
 ARRAY_SIZE(msm_int_be_dai) +
 ARRAY_SIZE(msm_mi2s_be_dai_links) +
+ARRAY_SIZE(msm_mi2s_be_dai_links_non_amp) +
+ARRAY_SIZE(msm_usb_audio_dai_links) +
 ARRAY_SIZE(msm_auxpcm_be_dai_links)+
 ARRAY_SIZE(msm_wcn_be_dai_links) +
 ARRAY_SIZE(msm_wsa_be_dai_links) +
@@ -3153,6 +3214,47 @@ static struct snd_soc_card *msm_int_populate_sndcard_dailinks(
 		       msm_mi2s_be_dai_links,
 		       sizeof(msm_mi2s_be_dai_links));
 		len1 += ARRAY_SIZE(msm_mi2s_be_dai_links);
+	}
+	/*Add for nxp tfa9891 or non nxp tfa9891*/
+	if(strstr(saved_command_line, "androidboot.device=PL2"))	{
+		if(strstr(saved_command_line, "androidboot.smartamp=nxp")) {
+			memcpy(dailink + len1,
+		    	   msm_mi2s_be_dai_links_nxp,
+		       	sizeof(msm_mi2s_be_dai_links_nxp));
+			len1 += ARRAY_SIZE(msm_mi2s_be_dai_links_nxp);
+		}
+		if(strstr(saved_command_line, "androidboot.smartamp=ti")){
+			memcpy(dailink + len1,
+		    	   msm_mi2s_be_dai_links_ti,
+		       	sizeof(msm_mi2s_be_dai_links_ti));
+			len1 += ARRAY_SIZE(msm_mi2s_be_dai_links_ti);
+		}
+	} else {
+		if (of_property_read_bool(dev->of_node,
+					  "fih,nxp-tfa98xx") ) {
+			memcpy(dailink + len1,
+		    	   msm_mi2s_be_dai_links_nxp,
+		       	sizeof(msm_mi2s_be_dai_links_nxp));
+			len1 += ARRAY_SIZE(msm_mi2s_be_dai_links_nxp);
+		}else if (of_property_read_bool(dev->of_node,
+				  	"fih,ti-tas2557")) {
+			memcpy(dailink + len1,
+		    	   msm_mi2s_be_dai_links_ti,
+		       	sizeof(msm_mi2s_be_dai_links_ti));
+			len1 += ARRAY_SIZE(msm_mi2s_be_dai_links_ti);
+		}else{
+			memcpy(dailink + len1,
+		    	   msm_mi2s_be_dai_links_non_amp,
+		       	sizeof(msm_mi2s_be_dai_links_non_amp));
+			len1 += ARRAY_SIZE(msm_mi2s_be_dai_links_non_amp);
+		}
+	}
+	if (of_property_read_bool(dev->of_node,
+				  "fih,usb-audio")) {
+		memcpy(dailink + len1,
+		       msm_usb_audio_dai_links,
+		       sizeof(msm_usb_audio_dai_links));
+		len1 += ARRAY_SIZE(msm_usb_audio_dai_links);
 	}
 	if (of_property_read_bool(dev->of_node,
 				  "qcom,auxpcm-audio-intf")) {

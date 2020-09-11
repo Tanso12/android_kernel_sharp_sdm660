@@ -162,6 +162,9 @@ static void fg_encode_default(struct fg_sram_param *sp,
 	enum fg_sram_param_id id, int val, u8 *buf);
 
 static struct fg_irq_info fg_irqs[FG_IRQ_MAX];
+#ifdef BBS_LOG
+static int fg_get_cycle_count(struct fg_chip *chip);
+#endif
 
 #define PARAM(_id, _addr_word, _addr_byte, _len, _num, _den, _offset,	\
 	      _enc, _dec)						\
@@ -810,6 +813,11 @@ static bool is_batt_empty(struct fg_chip *chip)
 		pr_warn("batt_soc_rt_sts: %x vbatt: %d uV msoc:%d\n", status,
 			vbatt_uv, msoc);
 
+	#ifdef BBS_LOG
+	if(vbatt_uv < chip->dt.cutoff_volt_mv * 1000)
+		QPNPFG_BATTERY_VOLTAGE_LOW;
+	#endif
+
 	return ((vbatt_uv < chip->dt.cutoff_volt_mv * 1000) ? true : false);
 }
 
@@ -984,6 +992,10 @@ static int fg_get_batt_profile(struct fg_chip *chip)
 	struct device_node *batt_node, *profile_node;
 	const char *data;
 	int rc, len;
+
+	#ifdef BBS_LOG
+		printk("BBox::UPD;0::%d\n", chip->batt_id_ohms/1000);
+	#endif
 
 	batt_node = of_find_node_by_name(node, "qcom,battery-data");
 	if (!batt_node) {
@@ -1334,6 +1346,7 @@ static int fg_load_learned_cap_from_sram(struct fg_chip *chip)
 {
 	int rc, act_cap_mah;
 	int64_t delta_cc_uah, pct_nom_cap_uah;
+	int aging_cc;
 
 	rc = fg_get_sram_prop(chip, FG_SRAM_ACT_BATT_CAP, &act_cap_mah);
 	if (rc < 0) {
@@ -1369,6 +1382,22 @@ static int fg_load_learned_cap_from_sram(struct fg_chip *chip)
 
 	fg_dbg(chip, FG_CAP_LEARN, "learned_cc_uah:%lld nom_cap_uah: %lld\n",
 		chip->cl.learned_cc_uah, chip->cl.nom_cap_uah);
+
+#ifdef BBS_LOG
+	printk("BBox::UPD;49::%lld\n", (chip->cl.nom_cap_uah)/1000);
+
+	if(chip->cl.learned_cc_uah < chip->cl.nom_cap_uah)
+	{
+		aging_cc = div64_s64((chip->cl.learned_cc_uah*100),
+					chip->cl.nom_cap_uah);
+		if(aging_cc < 70) {
+			printk("BBox::UEC;49::2\n");
+			printk("BBox::UPD;50::%d::%lld\n", fg_get_cycle_count(chip), (chip->cl.learned_cc_uah)/1000);
+		}
+
+	}
+#endif
+
 	return 0;
 }
 
@@ -2083,6 +2112,7 @@ static int fg_adjust_recharge_soc(struct fg_chip *chip)
 
 	recharge_soc = chip->dt.recharge_soc_thr;
 	recharge_soc_status = chip->recharge_soc_adjusted;
+
 	/*
 	 * If the input is present and charging had been terminated, adjust
 	 * the recharge SOC threshold based on the monotonic SOC at which
@@ -2856,7 +2886,8 @@ static bool is_profile_load_required(struct fg_chip *chip)
 		profiles_same = memcmp(chip->batt_profile, buf,
 					PROFILE_COMP_LEN) == 0;
 		if (profiles_same) {
-			fg_dbg(chip, FG_STATUS, "Battery profile is same, not loading it\n");
+			//fg_dbg(chip, FG_STATUS, "Battery profile is same, not loading it\n");
+			pr_err("Battery profile is same, not loading it\n");
 			return false;
 		}
 
@@ -2873,7 +2904,8 @@ static bool is_profile_load_required(struct fg_chip *chip)
 			return false;
 		}
 
-		fg_dbg(chip, FG_STATUS, "Profiles are different, loading the correct one\n");
+		//fg_dbg(chip, FG_STATUS, "Profiles are different, loading the correct one\n");
+		pr_err("Profiles are different, loading the correct one\n");
 	} else {
 		fg_dbg(chip, FG_STATUS, "Profile integrity bit is not set\n");
 		if (fg_profile_dump) {
@@ -2950,6 +2982,10 @@ static int __fg_restart(struct fg_chip *chip)
 		pr_err("Error in getting capacity, rc=%d\n", rc);
 		return rc;
 	}
+
+	#ifdef BBS_LOG
+	printk("BBox::UPD;72::\n");
+	#endif
 
 	chip->last_soc = msoc;
 	chip->fg_restarting = true;
@@ -3850,6 +3886,9 @@ static int fg_psy_get_property(struct power_supply *psy,
 	case POWER_SUPPLY_PROP_CC_STEP_SEL:
 		pval->intval = chip->ttf.cc_step.sel;
 		break;
+	case POWER_SUPPLY_PROP_FG_RESET_CLOCK:
+		pval->intval = 0;
+		break;
 	default:
 		pr_err("unsupported property %d\n", psp);
 		rc = -EINVAL;
@@ -3860,6 +3899,108 @@ static int fg_psy_get_property(struct power_supply *psy,
 		return -ENODATA;
 
 	return 0;
+}
+
+#define BCL_RESET_RETRY_COUNT 4
+static int fg_bcl_reset(struct fg_chip *chip)
+{
+	int i, ret, rc = 0;
+	u8 val, peek_mux;
+	bool success = false;
+
+	/* Read initial value of peek mux1 */
+	rc = fg_read(chip, BATT_INFO_PEEK_MUX1(chip), &peek_mux, 1);
+	if (rc < 0) {
+		pr_err("Error in writing peek mux1, rc=%d\n", rc);
+		return rc;
+	}
+
+	val = 0x83;
+	rc = fg_write(chip, BATT_INFO_PEEK_MUX1(chip), &val, 1);
+	if (rc < 0) {
+		pr_err("Error in writing peek mux1, rc=%d\n", rc);
+		return rc;
+	}
+
+	mutex_lock(&chip->sram_rw_lock);
+	for (i = 0; i < BCL_RESET_RETRY_COUNT; i++) {
+		rc = fg_dma_mem_req(chip, true);
+		if (rc < 0) {
+			pr_err("Error in locking memory, rc=%d\n", rc);
+			goto unlock;
+		}
+
+		rc = fg_read(chip, BATT_INFO_RDBACK(chip), &val, 1);
+		if (rc < 0) {
+			pr_err("Error in reading rdback, rc=%d\n", rc);
+			goto release_mem;
+		}
+
+		if (val & PEEK_MUX1_BIT) {
+			rc = fg_masked_write(chip, BATT_SOC_RST_CTRL0(chip),
+						BCL_RESET_BIT, BCL_RESET_BIT);
+			if (rc < 0) {
+				pr_err("Error in writing RST_CTRL0, rc=%d\n",
+						rc);
+				goto release_mem;
+			}
+
+			rc = fg_dma_mem_req(chip, false);
+			if (rc < 0)
+				pr_err("Error in unlocking memory, rc=%d\n", rc);
+
+			/* Delay of 2ms */
+			usleep_range(2000, 3000);
+			ret = fg_masked_write(chip, BATT_SOC_RST_CTRL0(chip),
+						BCL_RESET_BIT, 0);
+			if (ret < 0)
+				pr_err("Error in writing RST_CTRL0, rc=%d\n",
+						rc);
+			if (!rc && !ret)
+				success = true;
+
+			goto unlock;
+		} else {
+			rc = fg_dma_mem_req(chip, false);
+			if (rc < 0) {
+				pr_err("Error in unlocking memory, rc=%d\n", rc);
+				return rc;
+			}
+			success = false;
+			pr_err_ratelimited("PEEK_MUX1 not set retrying...\n");
+			msleep(1000);
+		}
+	}
+
+release_mem:
+	rc = fg_dma_mem_req(chip, false);
+	if (rc < 0)
+		pr_err("Error in unlocking memory, rc=%d\n", rc);
+
+unlock:
+	ret = fg_write(chip, BATT_INFO_PEEK_MUX1(chip), &peek_mux, 1);
+	if (ret < 0) {
+		pr_err("Error in writing peek mux1, rc=%d\n", rc);
+		mutex_unlock(&chip->sram_rw_lock);
+		return ret;
+	}
+
+	mutex_unlock(&chip->sram_rw_lock);
+
+	/*FIH_ZZDC_Code@2018/01/17 John::[PL2O-3267] a QC solution for devices can't be charged degin*/
+	msleep(100);
+	if (fg_get_batt_id(chip) < 0) {
+		pr_err("Error in getting battery id\n");
+	}
+	/*FIH_ZZDC_Code@2018/01/17 John::[PL2O-3267] a QC solution for devices can't be charged end*/
+	if (!success)
+		return -EAGAIN;
+	else
+	{
+		pr_err("BBox;%s: rradc read failed, reset fuel gaugle\n", __func__);
+		printk("BBox::UEC;12::3\n");
+		return rc;
+	}
 }
 
 static int fg_psy_set_property(struct power_supply *psy,
@@ -3947,6 +4088,13 @@ static int fg_psy_set_property(struct power_supply *psy,
 		rc = fg_set_jeita_threshold(chip, JEITA_HOT, pval->intval);
 		if (rc < 0) {
 			pr_err("Error in writing jeita_hot, rc=%d\n", rc);
+			return rc;
+		}
+		break;
+	case POWER_SUPPLY_PROP_FG_RESET_CLOCK:
+		rc = fg_bcl_reset(chip);
+		if (rc < 0) {
+			pr_err("Error in resetting BCL clock, rc=%d\n", rc);
 			return rc;
 		}
 		break;
@@ -4047,6 +4195,7 @@ static enum power_supply_property fg_psy_props[] = {
 	POWER_SUPPLY_PROP_CONSTANT_CHARGE_VOLTAGE,
 	POWER_SUPPLY_PROP_CC_STEP,
 	POWER_SUPPLY_PROP_CC_STEP_SEL,
+	POWER_SUPPLY_PROP_FG_RESET_CLOCK,
 };
 
 static const struct power_supply_desc fg_psy_desc = {
@@ -4500,6 +4649,7 @@ static irqreturn_t fg_delta_batt_temp_irq_handler(int irq, void *data)
 	if (abs(chip->last_batt_temp - batt_temp) > 30)
 		pr_warn("Battery temperature last:%d current: %d\n",
 			chip->last_batt_temp, batt_temp);
+
 	return IRQ_HANDLED;
 }
 
@@ -4769,6 +4919,7 @@ static int fg_parse_slope_limit_coefficients(struct fg_chip *chip)
 		return rc;
 
 	for (i = 0; i < SLOPE_LIMIT_NUM_COEFFS; i++) {
+		pr_err("dt.slope_limit_coeffs[%d]=%d\n", i, chip->dt.slope_limit_coeffs[i]);
 		if (chip->dt.slope_limit_coeffs[i] > SLOPE_LIMIT_COEFF_MAX ||
 			chip->dt.slope_limit_coeffs[i] < 0) {
 			pr_err("Incorrect slope limit coefficient\n");
@@ -5153,6 +5304,8 @@ static int fg_parse_dt(struct fg_chip *chip)
 	if (!rc)
 		chip->dt.rconn_mohms = temp;
 
+	pr_err("dt.rconn_mohms=%d\n", chip->dt.rconn_mohms);
+
 	rc = of_property_read_u32(node, "qcom,fg-esr-filter-switch-temp",
 			&temp);
 	if (rc < 0)
@@ -5173,6 +5326,8 @@ static int fg_parse_dt(struct fg_chip *chip)
 		chip->dt.esr_broad_flt_upct = DEFAULT_ESR_BROAD_FLT_UPCT;
 	else
 		chip->dt.esr_broad_flt_upct = temp;
+
+	pr_err("dt.esr_tight_flt_upct=%d dt.esr_broad_flt_upct=%d\n", chip->dt.esr_tight_flt_upct, chip->dt.esr_broad_flt_upct);
 
 	rc = of_property_read_u32(node, "qcom,fg-esr-tight-lt-filter-micro-pct",
 			&temp);

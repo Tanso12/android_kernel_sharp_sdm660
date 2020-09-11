@@ -651,7 +651,6 @@ static int qseecom_scm_call2(uint32_t svc_id, uint32_t tz_cmd_id,
 				desc.args[1] = req_64bit->sb_ptr;
 				desc.args[2] = req_64bit->sb_len;
 			}
-			qseecom.smcinvoke_support = true;
 			smc_id = TZ_OS_REGISTER_LISTENER_SMCINVOKE_ID;
 			ret = __qseecom_scm_call2_locked(smc_id, &desc);
 			if (ret == -EIO) {
@@ -1082,11 +1081,7 @@ static int qseecom_scm_call2(uint32_t svc_id, uint32_t tz_cmd_id,
 			struct qseecom_continue_blocked_request_ireq *req =
 				(struct qseecom_continue_blocked_request_ireq *)
 				req_buf;
-			if (qseecom.smcinvoke_support)
-				smc_id =
-				TZ_OS_CONTINUE_BLOCKED_REQUEST_SMCINVOKE_ID;
-			else
-				smc_id = TZ_OS_CONTINUE_BLOCKED_REQUEST_ID;
+			smc_id = TZ_OS_CONTINUE_BLOCKED_REQUEST_ID;
 			desc.arginfo =
 				TZ_OS_CONTINUE_BLOCKED_REQUEST_ID_PARAM_ID;
 			desc.args[0] = req->app_or_session_id;
@@ -5114,7 +5109,7 @@ int qseecom_process_listener_from_smcinvoke(struct scm_desc *desc)
 	}
 
 	resp.result = desc->ret[0];	/*req_cmd*/
-	resp.resp_type = desc->ret[1]; /*incomplete:unused;blocked:session_id*/
+	resp.resp_type = desc->ret[1];	/*app_id*/
 	resp.data = desc->ret[2];	/*listener_id*/
 
 	dummy_private_data.client.app_id = desc->ret[1];
@@ -5130,7 +5125,7 @@ int qseecom_process_listener_from_smcinvoke(struct scm_desc *desc)
 					&resp);
 	mutex_unlock(&app_access_lock);
 	if (ret)
-		pr_err("Failed on cmd %d for lsnr %d session %d, ret = %d\n",
+		pr_err("Failed to req cmd %d lsnr %d on app %d, ret = %d\n",
 			(int)desc->ret[0], (int)desc->ret[2],
 			(int)desc->ret[1], ret);
 	desc->ret[0] = resp.result;

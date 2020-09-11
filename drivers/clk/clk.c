@@ -2314,7 +2314,13 @@ EXPORT_SYMBOL_GPL(clk_set_flags);
 
 static struct dentry *rootdir;
 static int inited = 0;
+//CORE-PK-SuspendLog-00*[
+#ifdef CONFIG_FIH_SUSPEND_RESUME_LOG
+static u32 debug_suspend = 0x1; /* Show clock info when suspend as default */
+#else
 static u32 debug_suspend;
+#endif
+//CORE-PK-SuspendLog-00*]
 static DEFINE_MUTEX(clk_debug_lock);
 static HLIST_HEAD(clk_debug_list);
 
