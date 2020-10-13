@@ -1,0 +1,38 @@
+/* S2Plus EVB SDM660 */
+
+/* MemMap parts */
+#include "../common/memmap-evb.dtsi"
+
+/* SYSTEM parts */
+#include "system-evb.dtsi"
+
+/* PMIC parts */
+
+/* GPIO parts */
+
+/* Peripheral */
+
+/* Charging */
+#include "charger-evt1.dtsi"
+
+/* Audio */
+#include "audio-alsa-evb.dtsi"
+
+/* Camera */
+
+/* Haptic */
+
+/* Touch */
+#include "touch-focaltech8716-evb.dtsi"
+
+/* LCM */
+#include "dsi-panel-ft8716-1080p-video-evb.dtsi"
+
+/* Fingerprint */
+#include "fingerprint-fpc1145-evb.dtsi"
+
+/* SD */
+#include "sd-evb.dtsi"
+
+/* Sensor */
+#include "hallsensor-ah1902-evb.dtsi"

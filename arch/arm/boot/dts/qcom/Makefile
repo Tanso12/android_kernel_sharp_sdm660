@@ -255,7 +255,15 @@ dtb-$(CONFIG_FIH_SDM630_SDM660_PROJS) += sdm660-mtp.dtb \
   sdm630-cdp-s2-dvt.dtb \
   sdm630-mtp-s2-evt.dtb \
   sdm630-mtp-s2-dvt.dtb \
-  sdm630-mtp-s2_eu-dvt.dtb
+  sdm630-mtp-s2_eu-dvt.dtb \
+	sdm660-cdp-s2p-evb.dtb \
+	sdm660-cdp-s2p-evt1.dtb \
+	sdm660-cdp-s2p-evt2.dtb \
+	sdm660-cdp-s2p-dvt.dtb \
+	sdm660-mtp-s2p-evb.dtb \
+	sdm660-mtp-s2p-evt1.dtb \
+	sdm660-mtp-s2p-evt2.dtb \
+	sdm660-mtp-s2p-dvt.dtb
 
 #dtb-$(CONFIG_ARCH_SDM660) += sdm660-sim.dtb \
 #	sdm660-internal-codec-cdp.dtb \
